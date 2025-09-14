@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react'; // Добавил useEffect для логирования
-import { Container, Typography, Box, Button } from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Container, Typography, Box, Button, Tooltip } from '@mui/material';
+import PanToolIcon from '@mui/icons-material/PanTool';
+import ColorLensIcon from '@mui/icons-material/ColorLens';
 
 import FileUpload from './features/upload/ui/FileUpload';
 import ImageCanvas from './entities/image/ui/ImageCanvas';
 import StatusBar from './shared/ui/StatusBar';
 import ScaleModal from './features/scaling/ui/ScaleModal';
+import ColorInfoPanel from './shared/ui/ColorInfoPanel';
 import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation';
+import { type ColorInfo, EMPTY_COLOR_INFO } from './entities/color/model/colorUtils';
 
 export interface ImageInfo {
   width: number;
@@ -21,8 +25,28 @@ export interface ImageInfo {
 function App() {
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<'hand' | 'eyedropper'>('hand'); // Состояние для инструмента
+  const [color1, setColor1] = useState<ColorInfo>(EMPTY_COLOR_INFO); // Состояние для первого цвета
+  const [color2, setColor2] = useState<ColorInfo>(EMPTY_COLOR_INFO); // Состояние для второго цвета
 
   const MAX_SIZE = 4096;
+
+  // useEffect для горячих клавиш
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'H' || event.key === 'h') {
+        setActiveTool('hand');
+      } else if (event.key === 'I' || event.key === 'i') {
+        setActiveTool('eyedropper');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Лог 1: Проверка состояния imageInfo при его обновлении
   useEffect(() => {
@@ -44,7 +68,7 @@ function App() {
     newHeight: number,
     interpolation: 'nearest' | 'bilinear'
   ) => {
-    if (!imageInfo?.imageElement) return; // Убедитесь, что imageElement всегда существует
+    if (!imageInfo?.imageElement) return;
 
     if (newWidth > MAX_SIZE || newHeight > MAX_SIZE) {
       alert(`Максимальный размер изображения: ${MAX_SIZE}x${MAX_SIZE} пикселей`);
@@ -71,7 +95,6 @@ function App() {
       scaledData = bilinearInterpolation(srcImageData, newWidth, newHeight);
     }
 
-    // Создаем новый imageElement из масштабированных данных
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = newWidth;
     tempCanvas.height = newHeight;
@@ -84,8 +107,17 @@ function App() {
       width: newWidth,
       height: newHeight,
       scale: 1,
-      imageElement: newImageElement, // Заменяем старый imageElement новым
+      imageElement: newImageElement,
     });
+  };
+
+  // Обработчик выбора цвета пипеткой
+  const handleColorPick = (color: ColorInfo, isAltPressed: boolean) => {
+    if (isAltPressed) {
+      setColor2(color);
+    } else {
+      setColor1(color);
+    }
   };
 
   return (
@@ -96,16 +128,47 @@ function App() {
       <Typography variant="h4" gutterBottom>
         Загрузка изображений (png, jpg, GrayBit-7)
       </Typography>
-
       <FileUpload onImageLoad={setImageInfo} />
 
       <Box sx={{ flexGrow: 1, position: 'relative', my: 2 }}>
-        <ImageCanvas imageInfo={imageInfo} />
+        {/* Панель с кнопками инструментов */}
+        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+          <Tooltip title="Инструмент: Рука (H)">
+            <Button
+              variant={activeTool === 'hand' ? 'contained' : 'outlined'}
+              onClick={() => setActiveTool('hand')}
+              disabled={!imageInfo}
+              aria-label="hand tool"
+            >
+              <PanToolIcon />
+            </Button>
+          </Tooltip>
+          <Tooltip title="Инструмент: Пипетка (I)">
+            <Button
+              variant={activeTool === 'eyedropper' ? 'contained' : 'outlined'}
+              onClick={() => setActiveTool('eyedropper')}
+              disabled={!imageInfo}
+              aria-label="eyedropper tool"
+            >
+              <ColorLensIcon />
+            </Button>
+          </Tooltip>
+          <Button
+            variant="outlined"
+            onClick={() => setScaleModalOpen(true)}
+            disabled={!imageInfo}
+          >
+            Изменить размер
+          </Button>
+        </Box>
+
+        <ImageCanvas
+          imageInfo={imageInfo}
+          activeTool={activeTool}
+          onColorPick={handleColorPick} // Передаем обработчик в canvas
+        />
 
         <StatusBar imageInfo={imageInfo} />
-        <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>
-          Изменить размер
-        </Button>
       </Box>
 
       <ScaleModal
@@ -114,6 +177,14 @@ function App() {
         imageInfo={imageInfo}
         onApply={handleApplyScaling}
       />
+
+      {/* Панель информации о цвете */}
+      {activeTool === 'eyedropper' && (
+        <Box sx={{ mt: 4 }}>
+          <ColorInfoPanel color1={color1} color2={color2} />
+        </Box>
+      )}
+
     </Container>
   );
 }

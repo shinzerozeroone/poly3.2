@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+
+import { useEffect, useRef, useState, type FC } from 'react';
+import { type ColorInfo, rgbToXyz, xyzToLab, labToLch, labToOklch } from '../../color/model/colorUtils';
 
 export interface ImageInfo {
     width: number;
@@ -13,11 +15,13 @@ export interface ImageInfo {
 
 interface ImageCanvasProps {
     imageInfo: ImageInfo | null;
+    activeTool: 'hand' | 'eyedropper';
+    onColorPick: (color: ColorInfo, isAltPressed: boolean) => void;
 }
 
 const CANVAS_DEFAULT_SIZE = 600;
 
-const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
+const ImageCanvas: FC<ImageCanvasProps> = ({ imageInfo, activeTool, onColorPick }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [imgLoaded, setImgLoaded] = useState(false);
 
@@ -50,7 +54,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
         }
     }, [imageInfo]);
 
-    // Обработчики событий для панорамирования и зума
+    // Обработчики событий для панорамирования, зума и пипетки
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -63,13 +67,14 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
         };
 
         const onMouseDown = (e: MouseEvent) => {
+            if (activeTool !== 'hand') return;
             isDraggingRef.current = true;
             lastMouseRef.current = { x: e.clientX, y: e.clientY };
             canvas.style.cursor = 'grabbing';
         };
 
         const onMouseMove = (e: MouseEvent) => {
-            if (!isDraggingRef.current) return;
+            if (!isDraggingRef.current || activeTool !== 'hand') return;
             const dx = e.clientX - lastMouseRef.current.x;
             const dy = e.clientY - lastMouseRef.current.y;
             panRef.current.x += dx;
@@ -83,18 +88,65 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
             canvas.style.cursor = 'grab';
         };
 
+        const onMouseClick = (e: MouseEvent) => {
+            if (activeTool !== 'eyedropper' || !imageInfo?.imageElement) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const imgX = Math.round((mouseX - panRef.current.x * zoomRef.current) / zoomRef.current);
+            const imgY = Math.round((mouseY - panRef.current.y * zoomRef.current) / zoomRef.current);
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            let imageData;
+            try {
+                imageData = ctx.getImageData(imgX, imgY, 1, 1);
+            } catch (error) {
+                console.error("Failed to get pixel data:", error);
+                return;
+            }
+
+            const [r, g, b] = imageData.data;
+            const finalR = imageInfo.depth === 7 ? Math.round((r / 127) * 255) : r;
+            const finalG = imageInfo.depth === 7 ? Math.round((g / 127) * 255) : g;
+            const finalB = imageInfo.depth === 7 ? Math.round((b / 127) * 255) : b;
+
+            const rgb = { r: finalR, g: finalG, b: finalB };
+            const xyz = rgbToXyz(rgb.r, rgb.g, rgb.b);
+            const lab = xyzToLab(xyz.x, xyz.y, xyz.z);
+            const lch = labToLch(lab.l, lab.a, lab.b);
+            const oklch = labToOklch(lab.l, lab.a, lab.b);
+
+            const colorInfo: ColorInfo = {
+                x: imgX,
+                y: imgY,
+                rgb,
+                xyz,
+                lab,
+                lch,
+                oklch,
+            };
+
+            onColorPick(colorInfo, e.altKey || e.ctrlKey || e.shiftKey);
+        };
+
         canvas.addEventListener('wheel', onWheel);
         canvas.addEventListener('mousedown', onMouseDown);
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
+        canvas.addEventListener('click', onMouseClick);
 
         return () => {
             canvas.removeEventListener('wheel', onWheel);
             canvas.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
+            canvas.removeEventListener('click', onMouseClick);
         };
-    }, []);
+    }, [activeTool, imageInfo, onColorPick, panRef, zoomRef]);
 
     // Отрисовка
     useEffect(() => {
@@ -114,8 +166,6 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
         const imgHeight = imageInfo.imageElement?.naturalHeight;
 
         if (!imgWidth || !imgHeight) return;
-
-        // const fitScale = Math.min(CANVAS_DEFAULT_SIZE / imgWidth, CANVAS_DEFAULT_SIZE / imgHeight);
 
         ctx.save();
         ctx.translate(CANVAS_DEFAULT_SIZE / 2, CANVAS_DEFAULT_SIZE / 2);
@@ -137,7 +187,9 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
                 width: CANVAS_DEFAULT_SIZE,
                 height: CANVAS_DEFAULT_SIZE,
                 overflow: 'hidden',
-                cursor: isDraggingRef.current ? 'grabbing' : 'grab',
+                cursor: activeTool === 'hand'
+                    ? (isDraggingRef.current ? 'grabbing' : 'grab')
+                    : 'crosshair',
             }}
         >
             <canvas ref={canvasRef} style={{ display: 'block' }} />
