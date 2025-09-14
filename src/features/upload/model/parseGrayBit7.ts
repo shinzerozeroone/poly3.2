@@ -74,11 +74,11 @@ export function parseGrayBit7(buffer: ArrayBuffer): Promise<GrayBit7Image | null
                 width,
                 height,
                 depth: 7,
-                imageData: undefined, // imageData больше не нужен
-                imageElement, // Возвращаем imageElement
+                imageData: undefined, 
+                imageElement,
             });
         };
         imageElement.onerror = (e) => reject(e);
-        imageElement.src = canvas.toDataURL(); // Получаем Data URL
+        imageElement.src = canvas.toDataURL(); 
     });
 }

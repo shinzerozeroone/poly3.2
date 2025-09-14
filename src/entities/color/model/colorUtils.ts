@@ -96,10 +96,7 @@ export function labToLch(l: number, a: number, b: number): LCH {
     return { l, c, h };
 }
 
-// Исправленная версия с правильными именами параметров
 export function labToOklch(l: number, _a: number, _b: number): OKLch {
-    // Эта функция является заглушкой. 
-    // Префиксы `_` перед именами параметров указывают TypeScript, что они не используются.
     return { l, c: 0, h: 0 };
 }
 

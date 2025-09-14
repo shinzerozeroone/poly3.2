@@ -2,7 +2,6 @@
 import React, { useRef, useState } from 'react';
 import { Button, Box, Typography } from '@mui/material';
 
-// Import the async parser
 import { parseGrayBit7 } from '../model/parseGrayBit7';
 
 export interface ImageInfo {
@@ -29,7 +28,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onImageLoad }) => {
         if (!file) return;
 
         setFileName(file.name);
-        // let imageInfo: ImageInfo | null = null;
 
         const fileReader = new FileReader();
 
