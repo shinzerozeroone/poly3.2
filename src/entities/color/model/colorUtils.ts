@@ -75,7 +75,7 @@ export function xyzToLab(x: number, y: number, z: number): Lab {
     y /= D65.y;
     z /= D65.z;
 
-    const f = (t: number) => (t > 0.008856) ? Math.cbrt(t) : (t * 7.787) + 16/116;
+    const f = (t: number) => (t > 0.008856) ? Math.cbrt(t) : (t * 7.787) + 16 / 116;
 
     let fx = f(x);
     let fy = f(y);
@@ -96,11 +96,12 @@ export function labToLch(l: number, a: number, b: number): LCH {
     return { l, c, h };
 }
 
-export function labToOklch(l: number, _b: number, b: number): OKLch {
-
+// Исправленная версия с правильными именами параметров
+export function labToOklch(l: number, _a: number, _b: number): OKLch {
+    // Эта функция является заглушкой. 
+    // Префиксы `_` перед именами параметров указывают TypeScript, что они не используются.
     return { l, c: 0, h: 0 };
 }
-
 
 // --- Функции для контраста ---
 
