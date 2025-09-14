@@ -20,7 +20,7 @@ export function parseGrayBit7(buffer: ArrayBuffer): Promise<GrayBit7Image | null
             return;
         }
 
-        const version = bytes[4];
+        // const version = bytes[4];
         const flag = bytes[5];
         const hasMask = (flag & 0x01) === 1;
 

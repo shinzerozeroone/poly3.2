@@ -29,7 +29,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onImageLoad }) => {
         if (!file) return;
 
         setFileName(file.name);
-        let imageInfo: ImageInfo | null = null;
+        // let imageInfo: ImageInfo | null = null;
 
         const fileReader = new FileReader();
 

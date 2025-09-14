@@ -115,7 +115,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageInfo }) => {
 
         if (!imgWidth || !imgHeight) return;
 
-        const fitScale = Math.min(CANVAS_DEFAULT_SIZE / imgWidth, CANVAS_DEFAULT_SIZE / imgHeight);
+        // const fitScale = Math.min(CANVAS_DEFAULT_SIZE / imgWidth, CANVAS_DEFAULT_SIZE / imgHeight);
 
         ctx.save();
         ctx.translate(CANVAS_DEFAULT_SIZE / 2, CANVAS_DEFAULT_SIZE / 2);
