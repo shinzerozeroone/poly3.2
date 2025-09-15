@@ -10,7 +10,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 
-import { parseGrayBit7 } from '../../upload/model/parseGrayBit7'; // Заменить на реальный путь
+import { parseGrayBit7 } from '../../upload/model/parseGrayBit7';
 
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay';
 
@@ -24,12 +24,22 @@ export interface Layer {
     opacity: number;
     blendMode: BlendMode;
     previewColor?: string;
+    imageData?: ImageData;
+    originalImageData?: ImageData;
+    curves?: {
+        x0: number;
+        y0: number;
+        x1: number;
+        y1: number;
+    };
 }
 
 interface LayerManagerProps {
     layers: Layer[];
     onChange: (layers: Layer[]) => void;
     maxLayers?: number;
+    onSetActiveLayerIndex: (index: number) => void;
+    onOpenCurvesDialog: (index: number) => void;
 }
 
 const blendModeTooltips: Record<BlendMode, string> = {
@@ -43,7 +53,7 @@ function genId() {
     return Math.random().toString(36).substr(2, 9);
 }
 
-const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers = 5 }) => {
+const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers = 5, onSetActiveLayerIndex, onOpenCurvesDialog }) => {
     const [addDialogOpen, setAddDialogOpen] = useState(false);
     const [newLayerName, setNewLayerName] = useState('Новый слой');
     const [colorFill, setColorFill] = useState('#ffffff');
@@ -55,87 +65,96 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
             alert(`Максимум ${maxLayers} слоев.`);
             return;
         }
+
         if (!fileInput) {
-            onChange([
-                ...layers,
-                {
-                    id: genId(),
-                    name: newLayerName,
-                    visible: true,
-                    alphaVisible: true,
-                    opacity: 1,
-                    blendMode: 'normal',
-                    previewColor: colorFill,
-                },
-            ]);
+            const newLayer: Layer = {
+                id: genId(),
+                name: newLayerName,
+                visible: true,
+                alphaVisible: true,
+                opacity: 1,
+                blendMode: 'normal',
+                previewColor: colorFill,
+            };
+            const newLayers = [...layers, newLayer];
+            onChange(newLayers);
+            onSetActiveLayerIndex(newLayers.length - 1);
             setAddDialogOpen(false);
             return;
         }
 
         const file = fileInput;
-        if (file.name.toLowerCase().endsWith('.gb7')) {
-            setLoading(true);
-            const reader = new FileReader();
-            reader.onload = async () => {
-                const buffer = reader.result as ArrayBuffer;
-                try {
-                    const gb7image = await parseGrayBit7(buffer);
-                    if (gb7image && gb7image.imageElement) {
-                        onChange([
-                            ...layers,
-                            {
-                                id: genId(),
-                                name: newLayerName,
-                                image: gb7image.imageElement,
-                                alphaImage: null,
-                                visible: true,
-                                alphaVisible: true,
-                                opacity: 1,
-                                blendMode: 'normal',
-                            },
-                        ]);
-                        setAddDialogOpen(false);
-                        setFileInput(null);
-                    } else {
-                        alert('Не удалось распарсить .gb7 файл');
+        const reader = new FileReader();
+
+        reader.onloadstart = () => setLoading(true);
+
+        reader.onload = async (e) => {
+            const result = e.target?.result;
+            try {
+                let img: HTMLImageElement;
+                let newImageData: ImageData;
+
+                if (file.name.toLowerCase().endsWith('.gb7')) {
+                    const gb7image = await parseGrayBit7(result as ArrayBuffer);
+                    if (!gb7image || !gb7image.imageElement) {
+                        throw new Error('Не удалось распарсить .gb7 файл');
                     }
-                } catch (e) {
-                    alert('Ошибка при парсинге .gb7 файла: ' + e);
-                } finally {
-                    setLoading(false);
+                    img = gb7image.imageElement;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) throw new Error('Could not get 2D context.');
+                    ctx.drawImage(img, 0, 0);
+                    newImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                } else {
+                    img = new Image();
+                    img.src = result as string;
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) throw new Error('Could not get 2D context.');
+                    ctx.drawImage(img, 0, 0);
+                    newImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 }
-            };
-            reader.onerror = () => {
-                alert('Ошибка чтения файла');
-                setLoading(false);
-            };
-            reader.readAsArrayBuffer(file);
-        } else {
-            const img = new Image();
-            img.onload = () => {
-                onChange([
-                    ...layers,
-                    {
-                        id: genId(),
-                        name: newLayerName,
-                        image: img,
-                        alphaImage: null,
-                        visible: true,
-                        alphaVisible: true,
-                        opacity: 1,
-                        blendMode: 'normal',
-                    },
-                ]);
+
+                const newLayer: Layer = {
+                    id: genId(),
+                    name: newLayerName,
+                    image: img,
+                    imageData: newImageData,
+                    alphaImage: null,
+                    visible: true,
+                    alphaVisible: true,
+                    opacity: 1,
+                    blendMode: 'normal',
+                };
+
+                const newLayers = [...layers, newLayer];
+                onChange(newLayers);
+                onSetActiveLayerIndex(newLayers.length - 1);
                 setAddDialogOpen(false);
                 setFileInput(null);
-            };
-            img.onerror = () => {
-                alert('Ошибка загрузки изображения');
+
+            } catch (error: any) {
+                alert('Ошибка при загрузке или обработке файла: ' + error.message);
+            } finally {
                 setLoading(false);
-            };
-            img.src = URL.createObjectURL(file);
+            }
+        };
+
+        if (file.name.toLowerCase().endsWith('.gb7')) {
+            reader.readAsArrayBuffer(file);
+        } else {
+            reader.readAsDataURL(file);
         }
     };
+
 
     const moveLayer = (index: number, direction: 'up' | 'down') => {
         const newIndex = direction === 'up' ? index - 1 : index + 1;
@@ -167,6 +186,40 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
         const newLayers = [...layers];
         newLayers[index].alphaImage = null;
         onChange(newLayers);
+    };
+
+    const deleteCurves = (index: number) => {
+        const newLayers = [...layers];
+        const layer = newLayers[index];
+
+        if (layer.originalImageData) {
+            // Восстанавливаем imageData из сохраненной копии
+            const canvas = document.createElement('canvas');
+            canvas.width = layer.originalImageData.width;
+            canvas.height = layer.originalImageData.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.putImageData(layer.originalImageData, 0, 0);
+                const newImg = new Image();
+                newImg.onload = () => {
+                    newLayers[index] = {
+                        ...layer,
+                        image: newImg,
+                        imageData: layer.originalImageData, // Восстанавливаем данные
+                        originalImageData: undefined, // Очищаем сохраненные данные
+                        curves: undefined, // Удаляем параметры кривой
+                    };
+                    onChange(newLayers);
+                };
+                newImg.src = canvas.toDataURL();
+            }
+        } else {
+            newLayers[index] = {
+                ...layer,
+                curves: undefined,
+            };
+            onChange(newLayers);
+        }
     };
 
     const changeOpacity = (index: number, value: number) => {
@@ -234,6 +287,24 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
                         label="Показать альфа-канал"
                     />
                     {layer.alphaImage && <Button size="small" color="error" onClick={() => deleteAlpha(index)}>Удалить альфа-канал</Button>}
+                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 1 }}>
+                        {layer.imageData && (
+                            !layer.curves ? (
+                                <Button size="small" variant="outlined" onClick={() => onOpenCurvesDialog(index)}>
+                                    Добавить кривую
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button size="small" variant="contained" onClick={() => onOpenCurvesDialog(index)}>
+                                        Редактировать кривую
+                                    </Button>
+                                    <Button size="small" color="error" variant="outlined" onClick={() => deleteCurves(index)}>
+                                        Удалить
+                                    </Button>
+                                </>
+                            )
+                        )}
+                    </Box>
                     <Box sx={{ mt: 1 }}>
                         <Typography gutterBottom>Непрозрачность: {(layer.opacity * 100).toFixed(0)}%</Typography>
                         <Slider value={layer.opacity} step={0.01} min={0} max={1} onChange={(e, val) => changeOpacity(index, val as number)} />

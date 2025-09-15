@@ -17,6 +17,7 @@ interface ImageCanvasProps {
     activeTool: 'hand' | 'eyedropper';
     onColorPick: (color: ColorInfo, isAltPressed: boolean) => void;
     compositeImage?: HTMLImageElement | null;
+    setActiveLayerIndex?: React.Dispatch<React.SetStateAction<number>>
 }
 
 const CANVAS_DEFAULT_SIZE = 600;

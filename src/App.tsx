@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Typography, Box, Button, Tooltip } from '@mui/material';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
@@ -11,7 +11,8 @@ import ScaleModal from './features/scaling/ui/ScaleModal';
 import ColorInfoPanel from './shared/ui/ColorInfoPanel';
 import { type ColorInfo, EMPTY_COLOR_INFO, type ImageInfo } from './entities/color/model/colorUtils';
 
-import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation'; // ваш путь
+import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation';
+import { CurvesDialog } from './features/curves/ui/CurvesDialog';
 
 function App() {
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
@@ -19,6 +20,8 @@ function App() {
   const [layersWindowOpen, setLayersWindowOpen] = useState(false);
   const [compositeImage, setCompositeImage] = useState<HTMLImageElement | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
+  const [curvesDialogOpen, setCurvesDialogOpen] = useState(false);
+  const [activeLayerIndex, setActiveLayerIndex] = useState<number>(0);
   const [activeTool, setActiveTool] = useState<'hand' | 'eyedropper'>('hand');
   const [color1, setColor1] = useState<ColorInfo>(EMPTY_COLOR_INFO);
   const [color2, setColor2] = useState<ColorInfo>(EMPTY_COLOR_INFO);
@@ -36,15 +39,10 @@ function App() {
     setImageInfo(prev => prev ? { ...prev, imageData: data } : prev);
   }, [imageInfo?.imageElement]);
 
-  // При загрузке нового базового изображения создаём базовый слой с id 'base-layer',
-  // или обновляем существующий базовый слой
   useEffect(() => {
     if (!imageInfo?.imageElement) return;
-
     const baseLayerIndex = layers.findIndex(layer => layer.id === 'base-layer');
-
     if (baseLayerIndex === -1) {
-      // Базовый слой отсутствует - добавляем в начало
       const baseLayer: Layer = {
         id: 'base-layer',
         name: 'Фон',
@@ -53,20 +51,20 @@ function App() {
         alphaVisible: true,
         opacity: 1,
         blendMode: 'normal',
+        imageData: imageInfo.imageData,
       };
       setLayers([baseLayer, ...layers]);
     } else {
-      // Обновляем базовый слой
       const newLayers = [...layers];
       newLayers[baseLayerIndex] = {
         ...newLayers[baseLayerIndex],
         image: imageInfo.imageElement,
+        imageData: imageInfo.imageData,
       };
       setLayers(newLayers);
     }
   }, [imageInfo]);
 
-  // Перерисовка итогового изображения на основе слоёв
   useEffect(() => {
     if (layers.length === 0) {
       setCompositeImage(null);
@@ -93,13 +91,11 @@ function App() {
       overlay: 'overlay',
     };
 
-    // Рисуем каждый слой по порядку, пропуская скрытые
     layers.forEach(layer => {
       if (!layer.visible || !layer.image) return;
       ctx.globalAlpha = layer.opacity;
       ctx.globalCompositeOperation = blendModeMap[layer.blendMode] || 'source-over';
       ctx.drawImage(layer.image, 0, 0, width, height);
-
       if (layer.alphaImage && layer.alphaVisible) {
         ctx.globalAlpha = layer.opacity * 0.5;
         ctx.globalCompositeOperation = 'source-over';
@@ -112,15 +108,11 @@ function App() {
     img.src = canvas.toDataURL();
   }, [layers]);
 
-  // Защита базового слоя от удаления в LayerManager
-  // (зависит от реализации LayerManager, сюда нужно добавить логику защиты удаления "base-layer")
-
   const handleColorPick = (color: ColorInfo, isAlt: boolean) => {
     if (isAlt) setColor2(color);
     else setColor1(color);
   };
 
-  // Масштабирование изображения с передачей результата в imageInfo
   const handleApplyScaling = (
     newWidth: number,
     newHeight: number,
@@ -130,7 +122,6 @@ function App() {
       console.warn('Нет imageData для масштабирования');
       return;
     }
-
     const scaledImageData =
       interpolation === 'nearest'
         ? nearestNeighborInterpolation(imageInfo.imageData, newWidth, newHeight)
@@ -156,6 +147,19 @@ function App() {
         imageElement: newImage,
         scale: 1,
       });
+
+      setLayers(prevLayers => {
+        const newLayers = [...prevLayers];
+        const activeLayer = newLayers[activeLayerIndex];
+        if (activeLayer) {
+          newLayers[activeLayerIndex] = {
+            ...activeLayer,
+            image: newImage,
+            imageData: scaledImageData,
+          };
+        }
+        return newLayers;
+      });
     };
     newImage.onerror = () => {
       console.error('Ошибка загрузки изображения после масштабирования');
@@ -163,66 +167,88 @@ function App() {
     newImage.src = canvas.toDataURL();
   };
 
+  const handleApplyCurves = (correctedImageData: ImageData, newCurvesData: { x0: number; y0: number; x1: number; y1: number }) => {
+    if (activeLayerIndex < 0 || activeLayerIndex >= layers.length) return;
+    const layer = layers[activeLayerIndex];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = correctedImageData.width;
+    canvas.height = correctedImageData.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.putImageData(correctedImageData, 0, 0);
+    const newImg = new Image();
+
+    newImg.onload = () => {
+      const newLayers = [...layers];
+      newLayers[activeLayerIndex] = {
+        ...layer,
+        image: newImg,
+        imageData: correctedImageData,
+        originalImageData: layer.imageData ? new ImageData(layer.imageData.data, layer.imageData.width, layer.imageData.height) : undefined, // <-- Сохраняем копию
+        curves: newCurvesData,
+      };
+      setLayers(newLayers);
+      setCurvesDialogOpen(false);
+    };
+    newImg.src = canvas.toDataURL();
+  };
+
+  const handleOpenCurvesDialog = (index: number) => {
+    setActiveLayerIndex(index);
+    setCurvesDialogOpen(true);
+  };
+
   return (
     <Container maxWidth="md" sx={{ mt: 4, height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h4" gutterBottom>
-        Загрузка изображений (png, jpg, GrayBit-7)
-      </Typography>
-
+      <Typography variant="h4" gutterBottom>Загрузка изображений (png, jpg, GrayBit-7)</Typography>
       <FileUpload onImageLoad={setImageInfo} />
 
       <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
         <Tooltip title="Инструмент: Рука (H)">
-          <Button
-            variant={activeTool === 'hand' ? 'contained' : 'outlined'}
-            onClick={() => setActiveTool('hand')}
-            disabled={!imageInfo}
-            aria-label="hand tool"
-          >
+          <Button variant={activeTool === 'hand' ? 'contained' : 'outlined'} onClick={() => setActiveTool('hand')} disabled={!imageInfo} aria-label="hand tool">
             <PanToolIcon />
           </Button>
         </Tooltip>
         <Tooltip title="Инструмент: Пипетка (I)">
-          <Button
-            variant={activeTool === 'eyedropper' ? 'contained' : 'outlined'}
-            onClick={() => setActiveTool('eyedropper')}
-            disabled={!imageInfo}
-            aria-label="eyedropper tool"
-          >
+          <Button variant={activeTool === 'eyedropper' ? 'contained' : 'outlined'} onClick={() => setActiveTool('eyedropper')} disabled={!imageInfo} aria-label="eyedropper tool">
             <ColorLensIcon />
           </Button>
         </Tooltip>
-        <Button variant="outlined" onClick={() => setLayersWindowOpen(!layersWindowOpen)} disabled={!imageInfo}>
-          Слои
-        </Button>
-        <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>
-          Изменить размер
-        </Button>
+        <Button variant="outlined" onClick={() => setLayersWindowOpen(!layersWindowOpen)} disabled={!imageInfo}>Слои</Button>
+        <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>Изменить размер</Button>
       </Box>
 
       {layersWindowOpen && (
         <Box sx={{ maxWidth: 400, mb: 2 }}>
-          <LayerManager layers={layers} onChange={setLayers} maxLayers={6} />
+          <LayerManager
+            layers={layers}
+            onChange={setLayers}
+            maxLayers={6}
+            onSetActiveLayerIndex={setActiveLayerIndex}
+            onOpenCurvesDialog={handleOpenCurvesDialog}
+          />
         </Box>
       )}
 
       <Box sx={{ flexGrow: 1, position: 'relative' }}>
-        <ImageCanvas
-          imageInfo={imageInfo}
-          activeTool={activeTool}
-          onColorPick={handleColorPick}
-          compositeImage={compositeImage}
-        />
+        <ImageCanvas imageInfo={imageInfo} activeTool={activeTool} onColorPick={handleColorPick} compositeImage={compositeImage} setActiveLayerIndex={setActiveLayerIndex} />
       </Box>
 
       <StatusBar imageInfo={imageInfo} />
 
-      <ScaleModal
-        open={scaleModalOpen}
-        onClose={() => setScaleModalOpen(false)}
-        imageInfo={imageInfo}
-        onApply={handleApplyScaling}
-      />
+      <ScaleModal open={scaleModalOpen} onClose={() => setScaleModalOpen(false)} imageInfo={imageInfo} onApply={handleApplyScaling} />
+
+      {layers[activeLayerIndex] && (
+        <CurvesDialog
+          open={curvesDialogOpen}
+          onClose={() => setCurvesDialogOpen(false)}
+          activeLayer={layers[activeLayerIndex] ?? null}
+          channel="rgb"
+          onApply={handleApplyCurves}
+          initialCurves={layers[activeLayerIndex]?.curves}
+        />
+      )}
 
       {activeTool === 'eyedropper' && (
         <Box sx={{ mt: 4 }}>
