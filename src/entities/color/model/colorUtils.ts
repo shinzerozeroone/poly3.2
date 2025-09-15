@@ -126,3 +126,14 @@ export function getContrastRatio(rgb1: RGB, rgb2: RGB): number {
 export function isAccessible(ratio: number): boolean {
     return ratio >= 4.5;
 }
+
+export interface ImageInfo {
+  width: number;
+  height: number;
+  depth: number;
+  imageData?: ImageData;
+  imageElement?: HTMLImageElement;
+  scale?: number;
+  scaledImageData?: ImageData;
+  format?: string;
+}
