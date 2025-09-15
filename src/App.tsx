@@ -9,7 +9,9 @@ import ImageCanvas from './entities/image/ui/ImageCanvas';
 import StatusBar from './shared/ui/StatusBar';
 import ScaleModal from './features/scaling/ui/ScaleModal';
 import ColorInfoPanel from './shared/ui/ColorInfoPanel';
+import ExportDialog from './features/export/ui/ExportDialog';
 import { type ColorInfo, EMPTY_COLOR_INFO, type ImageInfo } from './entities/color/model/colorUtils';
+import { encodeGb7, downloadFile } from './features/export/model/exportToGb7'; // <-- Импортируем новую функцию
 
 import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation';
 import { CurvesDialog } from './features/curves/ui/CurvesDialog';
@@ -21,6 +23,7 @@ function App() {
   const [compositeImage, setCompositeImage] = useState<HTMLImageElement | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [curvesDialogOpen, setCurvesDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [activeLayerIndex, setActiveLayerIndex] = useState<number>(0);
   const [activeTool, setActiveTool] = useState<'hand' | 'eyedropper'>('hand');
   const [color1, setColor1] = useState<ColorInfo>(EMPTY_COLOR_INFO);
@@ -170,7 +173,6 @@ function App() {
   const handleApplyCurves = (correctedImageData: ImageData, newCurvesData: { x0: number; y0: number; x1: number; y1: number }) => {
     if (activeLayerIndex < 0 || activeLayerIndex >= layers.length) return;
     const layer = layers[activeLayerIndex];
-
     const canvas = document.createElement('canvas');
     canvas.width = correctedImageData.width;
     canvas.height = correctedImageData.height;
@@ -178,14 +180,13 @@ function App() {
     if (!ctx) return;
     ctx.putImageData(correctedImageData, 0, 0);
     const newImg = new Image();
-
     newImg.onload = () => {
       const newLayers = [...layers];
       newLayers[activeLayerIndex] = {
         ...layer,
         image: newImg,
         imageData: correctedImageData,
-        originalImageData: layer.imageData ? new ImageData(layer.imageData.data, layer.imageData.width, layer.imageData.height) : undefined, // <-- Сохраняем копию
+        originalImageData: layer.imageData ? new ImageData(layer.imageData.data, layer.imageData.width, layer.imageData.height) : undefined,
         curves: newCurvesData,
       };
       setLayers(newLayers);
@@ -197,6 +198,74 @@ function App() {
   const handleOpenCurvesDialog = (index: number) => {
     setActiveLayerIndex(index);
     setCurvesDialogOpen(true);
+  };
+
+  const handleExportPng = () => {
+    if (!compositeImage) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = compositeImage.naturalWidth;
+    canvas.height = compositeImage.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(compositeImage, 0, 0);
+    const dataURL = canvas.toDataURL('image/png');
+
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'image.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setExportDialogOpen(false);
+  };
+
+  const handleExportJpg = () => {
+    if (!compositeImage) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = compositeImage.naturalWidth;
+    canvas.height = compositeImage.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(compositeImage, 0, 0);
+    const dataURL = canvas.toDataURL('image/jpeg');
+
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'image.jpg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setExportDialogOpen(false);
+  };
+
+  const handleExportGb7 = () => {
+    if (!compositeImage) {
+      alert('Нет скомбинированного изображения для экспорта.');
+      return;
+    }
+
+    // Создаем временный canvas, чтобы получить ImageData из compositeImage
+    const canvas = document.createElement('canvas');
+    canvas.width = compositeImage.naturalWidth;
+    canvas.height = compositeImage.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      alert('Ошибка при создании канваса.');
+      return;
+    }
+
+    // Рисуем скомбинированное изображение на временный canvas
+    ctx.drawImage(compositeImage, 0, 0);
+
+    // Получаем ImageData скомбинированного изображения
+    const combinedImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Кодируем полученные данные в GB7
+    const buffer = encodeGb7(combinedImageData);
+    downloadFile(buffer, 'image.gb7', 'application/octet-stream');
+    setExportDialogOpen(false);
   };
 
   return (
@@ -217,6 +286,7 @@ function App() {
         </Tooltip>
         <Button variant="outlined" onClick={() => setLayersWindowOpen(!layersWindowOpen)} disabled={!imageInfo}>Слои</Button>
         <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>Изменить размер</Button>
+        <Button variant="outlined" onClick={() => setExportDialogOpen(true)} disabled={!compositeImage}>Экспорт</Button>
       </Box>
 
       {layersWindowOpen && (
@@ -249,6 +319,14 @@ function App() {
           initialCurves={layers[activeLayerIndex]?.curves}
         />
       )}
+
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        onExportPng={handleExportPng}
+        onExportJpg={handleExportJpg}
+        onExportGb7={handleExportGb7}
+      />
 
       {activeTool === 'eyedropper' && (
         <Box sx={{ mt: 4 }}>

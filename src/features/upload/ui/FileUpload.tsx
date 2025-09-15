@@ -1,4 +1,3 @@
-// FileUpload.tsx
 import React, { useRef, useState } from 'react';
 import { Button, Box, Typography } from '@mui/material';
 
@@ -32,29 +31,33 @@ const FileUpload: React.FC<FileUploadProps> = ({ onImageLoad }) => {
         const fileReader = new FileReader();
 
         if (file.name.endsWith('.gb7')) {
-            // Обработка GB7
             fileReader.onload = async (e) => {
                 const buffer = e.target?.result as ArrayBuffer;
-                // Асинхронный вызов, ждём результат
-                const gb7Info = await parseGrayBit7(buffer);
-                if (gb7Info) {
-                    onImageLoad({
-                        ...gb7Info,
-                        format: 'gb7',
-                    });
+                try {
+                    const gb7Info = await parseGrayBit7(buffer);
+                    if (gb7Info) {
+                        onImageLoad({
+                            ...gb7Info,
+                            format: 'gb7',
+                        });
+                    } else {
+                        console.error('Не удалось распарсить GB7-файл.');
+                    }
+                } catch (error) {
+                    console.error('Ошибка при обработке GB7-файла:', error);
                 }
             };
             fileReader.readAsArrayBuffer(file);
         } else {
-            // Обработка PNG/JPG
             fileReader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
                     onImageLoad({
                         width: img.naturalWidth,
                         height: img.naturalHeight,
-                        depth: 8, // PNG/JPG имеют глубину 8 бит
+                        depth: 8,
                         imageElement: img,
+                        imageData: undefined,
                         format: 'image',
                     });
                 };
@@ -69,9 +72,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ onImageLoad }) => {
             <input
                 ref={inputRef}
                 type="file"
+                hidden
                 accept=".png,.jpg,.jpeg,.gb7"
                 onChange={handleFileChange}
-                style={{ display: 'none' }}
             />
             <Button variant="contained" onClick={() => inputRef.current?.click()}>
                 Выбрать файл

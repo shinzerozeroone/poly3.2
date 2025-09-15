@@ -96,17 +96,12 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
 
                 if (file.name.toLowerCase().endsWith('.gb7')) {
                     const gb7image = await parseGrayBit7(result as ArrayBuffer);
-                    if (!gb7image || !gb7image.imageElement) {
+                    if (!gb7image) {
                         throw new Error('Не удалось распарсить .gb7 файл');
                     }
-                    img = gb7image.imageElement;
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) throw new Error('Could not get 2D context.');
-                    ctx.drawImage(img, 0, 0);
-                    newImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    // Устанавливаем img и imageData из результата парсинга
+                    img = gb7image.imageElement!;
+                    newImageData = gb7image.imageData!;
                 } else {
                     img = new Image();
                     img.src = result as string;
@@ -127,7 +122,7 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
                     id: genId(),
                     name: newLayerName,
                     image: img,
-                    imageData: newImageData,
+                    imageData: newImageData, // <-- Теперь imageData будет всегда
                     alphaImage: null,
                     visible: true,
                     alphaVisible: true,
@@ -193,7 +188,6 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
         const layer = newLayers[index];
 
         if (layer.originalImageData) {
-            // Восстанавливаем imageData из сохраненной копии
             const canvas = document.createElement('canvas');
             canvas.width = layer.originalImageData.width;
             canvas.height = layer.originalImageData.height;
@@ -205,9 +199,9 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
                     newLayers[index] = {
                         ...layer,
                         image: newImg,
-                        imageData: layer.originalImageData, // Восстанавливаем данные
-                        originalImageData: undefined, // Очищаем сохраненные данные
-                        curves: undefined, // Удаляем параметры кривой
+                        imageData: layer.originalImageData,
+                        originalImageData: undefined,
+                        curves: undefined,
                     };
                     onChange(newLayers);
                 };

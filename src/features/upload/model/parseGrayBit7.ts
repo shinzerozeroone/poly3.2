@@ -20,7 +20,6 @@ export function parseGrayBit7(buffer: ArrayBuffer): Promise<GrayBit7Image | null
             return;
         }
 
-        // const version = bytes[4];
         const flag = bytes[5];
         const hasMask = (flag & 0x01) === 1;
 
@@ -64,17 +63,15 @@ export function parseGrayBit7(buffer: ArrayBuffer): Promise<GrayBit7Image | null
             data[idx + 3] = maskBit ? 255 : 0;
         }
         
-        // Отрисовываем imageData на временный канвас
         ctx.putImageData(imageData, 0, 0);
 
-        // Создаём imageElement из канваса
         const imageElement = new Image();
         imageElement.onload = () => {
             resolve({
                 width,
                 height,
                 depth: 7,
-                imageData: undefined, 
+                imageData, // <-- Возвращаем объект imageData
                 imageElement,
             });
         };
