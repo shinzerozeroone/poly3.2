@@ -11,6 +11,8 @@ import ScaleModal from './features/scaling/ui/ScaleModal';
 import ColorInfoPanel from './shared/ui/ColorInfoPanel';
 import { type ColorInfo, EMPTY_COLOR_INFO, type ImageInfo } from './entities/color/model/colorUtils';
 
+import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation'; // ваш путь
+
 function App() {
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -21,15 +23,28 @@ function App() {
   const [color1, setColor1] = useState<ColorInfo>(EMPTY_COLOR_INFO);
   const [color2, setColor2] = useState<ColorInfo>(EMPTY_COLOR_INFO);
 
-  const MAX_SIZE = 4096;
-
   useEffect(() => {
-    // При загрузке нового базового изображения создаём базовый слой Фон (если еще нет)
+    if (!imageInfo?.imageElement) return;
+    const img = imageInfo.imageElement;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    setImageInfo(prev => prev ? { ...prev, imageData: data } : prev);
+  }, [imageInfo?.imageElement]);
+
+  // При загрузке нового базового изображения создаём базовый слой с id 'base-layer',
+  // или обновляем существующий базовый слой
+  useEffect(() => {
     if (!imageInfo?.imageElement) return;
 
     const baseLayerIndex = layers.findIndex(layer => layer.id === 'base-layer');
 
     if (baseLayerIndex === -1) {
+      // Базовый слой отсутствует - добавляем в начало
       const baseLayer: Layer = {
         id: 'base-layer',
         name: 'Фон',
@@ -41,7 +56,7 @@ function App() {
       };
       setLayers([baseLayer, ...layers]);
     } else {
-      // Обновляем изображение фона, если меняется базовое фото
+      // Обновляем базовый слой
       const newLayers = [...layers];
       newLayers[baseLayerIndex] = {
         ...newLayers[baseLayerIndex],
@@ -51,13 +66,17 @@ function App() {
     }
   }, [imageInfo]);
 
+  // Перерисовка итогового изображения на основе слоёв
   useEffect(() => {
     if (layers.length === 0) {
       setCompositeImage(null);
       return;
     }
-    const width = layers[0]?.image?.naturalWidth || 800;
-    const height = layers[0]?.image?.naturalHeight || 600;
+    const baseLayer = layers.find(layer => layer.id === 'base-layer');
+    if (!baseLayer || !baseLayer.image) return;
+
+    const width = baseLayer.image.naturalWidth;
+    const height = baseLayer.image.naturalHeight;
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -67,7 +86,6 @@ function App() {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Режимы наложения для canvas
     const blendModeMap: Record<string, GlobalCompositeOperation> = {
       normal: 'source-over',
       multiply: 'multiply',
@@ -75,33 +93,74 @@ function App() {
       overlay: 'overlay',
     };
 
-    for (const layer of layers) {
-      if (!layer.visible) continue;
+    // Рисуем каждый слой по порядку, пропуская скрытые
+    layers.forEach(layer => {
+      if (!layer.visible || !layer.image) return;
       ctx.globalAlpha = layer.opacity;
       ctx.globalCompositeOperation = blendModeMap[layer.blendMode] || 'source-over';
-
-      if (layer.image) {
-        ctx.drawImage(layer.image, 0, 0, width, height);
-      } else if (layer.previewColor) {
-        ctx.fillStyle = layer.previewColor;
-        ctx.fillRect(0, 0, width, height);
-      }
+      ctx.drawImage(layer.image, 0, 0, width, height);
 
       if (layer.alphaImage && layer.alphaVisible) {
         ctx.globalAlpha = layer.opacity * 0.5;
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(layer.alphaImage, 0, 0, width, height);
       }
-    }
+    });
 
     const img = new Image();
     img.onload = () => setCompositeImage(img);
     img.src = canvas.toDataURL();
   }, [layers]);
 
+  // Защита базового слоя от удаления в LayerManager
+  // (зависит от реализации LayerManager, сюда нужно добавить логику защиты удаления "base-layer")
+
   const handleColorPick = (color: ColorInfo, isAlt: boolean) => {
     if (isAlt) setColor2(color);
     else setColor1(color);
+  };
+
+  // Масштабирование изображения с передачей результата в imageInfo
+  const handleApplyScaling = (
+    newWidth: number,
+    newHeight: number,
+    interpolation: 'nearest' | 'bilinear'
+  ) => {
+    if (!imageInfo?.imageData) {
+      console.warn('Нет imageData для масштабирования');
+      return;
+    }
+
+    const scaledImageData =
+      interpolation === 'nearest'
+        ? nearestNeighborInterpolation(imageInfo.imageData, newWidth, newHeight)
+        : bilinearInterpolation(imageInfo.imageData, newWidth, newHeight);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.error('Не удалось получить 2d контекст');
+      return;
+    }
+    ctx.putImageData(scaledImageData, 0, 0);
+
+    const newImage = new Image();
+    newImage.onload = () => {
+      setImageInfo({
+        ...imageInfo,
+        width: newWidth,
+        height: newHeight,
+        imageData: scaledImageData,
+        imageElement: newImage,
+        scale: 1,
+      });
+    };
+    newImage.onerror = () => {
+      console.error('Ошибка загрузки изображения после масштабирования');
+    };
+    newImage.src = canvas.toDataURL();
   };
 
   return (
@@ -133,11 +192,9 @@ function App() {
             <ColorLensIcon />
           </Button>
         </Tooltip>
-
         <Button variant="outlined" onClick={() => setLayersWindowOpen(!layersWindowOpen)} disabled={!imageInfo}>
           Слои
         </Button>
-
         <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>
           Изменить размер
         </Button>
@@ -164,9 +221,7 @@ function App() {
         open={scaleModalOpen}
         onClose={() => setScaleModalOpen(false)}
         imageInfo={imageInfo}
-        onApply={(w, h, method) => {
-          // Ваша логика масштабирования здесь
-        }}
+        onApply={handleApplyScaling}
       />
 
       {activeTool === 'eyedropper' && (
