@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, IconButton, Button, Slider,
     Select, MenuItem, Tooltip, Checkbox, FormControlLabel,
@@ -40,6 +40,7 @@ interface LayerManagerProps {
     maxLayers?: number;
     onSetActiveLayerIndex: (index: number) => void;
     onOpenCurvesDialog: (index: number) => void;
+    onOpenKernelFilterDialog: () => void;
 }
 
 const blendModeTooltips: Record<BlendMode, string> = {
@@ -53,7 +54,7 @@ function genId() {
     return Math.random().toString(36).substr(2, 9);
 }
 
-const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers = 5, onSetActiveLayerIndex, onOpenCurvesDialog }) => {
+const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers = 5, onSetActiveLayerIndex, onOpenCurvesDialog, onOpenKernelFilterDialog }) => {
     const [addDialogOpen, setAddDialogOpen] = useState(false);
     const [newLayerName, setNewLayerName] = useState('Новый слой');
     const [colorFill, setColorFill] = useState('#ffffff');
@@ -99,7 +100,6 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
                     if (!gb7image) {
                         throw new Error('Не удалось распарсить .gb7 файл');
                     }
-                    // Устанавливаем img и imageData из результата парсинга
                     img = gb7image.imageElement!;
                     newImageData = gb7image.imageData!;
                 } else {
@@ -122,7 +122,7 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
                     id: genId(),
                     name: newLayerName,
                     image: img,
-                    imageData: newImageData, // <-- Теперь imageData будет всегда
+                    imageData: newImageData,
                     alphaImage: null,
                     visible: true,
                     alphaVisible: true,
@@ -323,6 +323,9 @@ const LayerManager: React.FC<LayerManagerProps> = ({ layers, onChange, maxLayers
             ))}
             <Button variant="contained" onClick={() => setAddDialogOpen(true)} disabled={layers.length >= maxLayers || loading}>
                 {loading ? 'Загрузка...' : 'Добавить слой'}
+            </Button>
+            <Button variant="outlined" onClick={onOpenKernelFilterDialog} disabled={!layers.length}>
+                Фильтры
             </Button>
             <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)}>
                 <DialogTitle>Добавить слой</DialogTitle>

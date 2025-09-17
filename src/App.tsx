@@ -11,10 +11,12 @@ import ScaleModal from './features/scaling/ui/ScaleModal';
 import ColorInfoPanel from './shared/ui/ColorInfoPanel';
 import ExportDialog from './features/export/ui/ExportDialog';
 import { type ColorInfo, EMPTY_COLOR_INFO, type ImageInfo } from './entities/color/model/colorUtils';
-import { encodeGb7, downloadFile } from './features/export/model/exportToGb7'; // <-- Импортируем новую функцию
+import { encodeGb7, downloadFile } from './features/export/model/exportToGb7';
+import { CurvesDialog } from './features/curves/ui/CurvesDialog';
+import KernelFilterDialog from './features/filters/ui/KernelFilterDialog';
+import { applyKernel } from './features/filters/model/applyKernel';
 
 import { nearestNeighborInterpolation, bilinearInterpolation } from './features/scaling/model/interpolation';
-import { CurvesDialog } from './features/curves/ui/CurvesDialog';
 
 function App() {
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
@@ -23,6 +25,7 @@ function App() {
   const [compositeImage, setCompositeImage] = useState<HTMLImageElement | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [curvesDialogOpen, setCurvesDialogOpen] = useState(false);
+  const [kernelFilterDialogOpen, setKernelFilterDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [activeLayerIndex, setActiveLayerIndex] = useState<number>(0);
   const [activeTool, setActiveTool] = useState<'hand' | 'eyedropper'>('hand');
@@ -195,9 +198,40 @@ function App() {
     newImg.src = canvas.toDataURL();
   };
 
+  const handleApplyKernel = (originalImageData: ImageData, kernel: number[][]) => {
+    if (activeLayerIndex < 0 || activeLayerIndex >= layers.length) return;
+    const layer = layers[activeLayerIndex];
+
+    const newImageData = applyKernel(originalImageData, kernel);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = newImageData.width;
+    canvas.height = newImageData.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.putImageData(newImageData, 0, 0);
+
+    const newImage = new Image();
+    newImage.onload = () => {
+      const newLayers = [...layers];
+      newLayers[activeLayerIndex] = {
+        ...layer,
+        image: newImage,
+        imageData: newImageData,
+      };
+      setLayers(newLayers);
+      setKernelFilterDialogOpen(false);
+    };
+    newImage.src = canvas.toDataURL();
+  };
+
   const handleOpenCurvesDialog = (index: number) => {
     setActiveLayerIndex(index);
     setCurvesDialogOpen(true);
+  };
+
+  const handleOpenKernelFilterDialog = () => {
+    setKernelFilterDialogOpen(true);
   };
 
   const handleExportPng = () => {
@@ -245,8 +279,6 @@ function App() {
       alert('Нет скомбинированного изображения для экспорта.');
       return;
     }
-
-    // Создаем временный canvas, чтобы получить ImageData из compositeImage
     const canvas = document.createElement('canvas');
     canvas.width = compositeImage.naturalWidth;
     canvas.height = compositeImage.naturalHeight;
@@ -255,14 +287,8 @@ function App() {
       alert('Ошибка при создании канваса.');
       return;
     }
-
-    // Рисуем скомбинированное изображение на временный canvas
     ctx.drawImage(compositeImage, 0, 0);
-
-    // Получаем ImageData скомбинированного изображения
     const combinedImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-    // Кодируем полученные данные в GB7
     const buffer = encodeGb7(combinedImageData);
     downloadFile(buffer, 'image.gb7', 'application/octet-stream');
     setExportDialogOpen(false);
@@ -270,7 +296,7 @@ function App() {
 
   return (
     <Container maxWidth="md" sx={{ mt: 4, height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h4" gutterBottom>Загрузка изображений (png, jpg, GrayBit-7)</Typography>
+      <Typography variant="h4" gutterBottom>Редактор изображений</Typography>
       <FileUpload onImageLoad={setImageInfo} />
 
       <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -286,6 +312,7 @@ function App() {
         </Tooltip>
         <Button variant="outlined" onClick={() => setLayersWindowOpen(!layersWindowOpen)} disabled={!imageInfo}>Слои</Button>
         <Button variant="outlined" onClick={() => setScaleModalOpen(true)} disabled={!imageInfo}>Изменить размер</Button>
+        <Button variant="outlined" onClick={handleOpenKernelFilterDialog} disabled={!imageInfo}>Фильтры</Button>
         <Button variant="outlined" onClick={() => setExportDialogOpen(true)} disabled={!compositeImage}>Экспорт</Button>
       </Box>
 
@@ -297,6 +324,7 @@ function App() {
             maxLayers={6}
             onSetActiveLayerIndex={setActiveLayerIndex}
             onOpenCurvesDialog={handleOpenCurvesDialog}
+            onOpenKernelFilterDialog={handleOpenKernelFilterDialog}
           />
         </Box>
       )}
@@ -317,6 +345,15 @@ function App() {
           channel="rgb"
           onApply={handleApplyCurves}
           initialCurves={layers[activeLayerIndex]?.curves}
+        />
+      )}
+
+      {layers[activeLayerIndex]?.imageData && (
+        <KernelFilterDialog
+          open={kernelFilterDialogOpen}
+          onClose={() => setKernelFilterDialogOpen(false)}
+          activeLayer={layers[activeLayerIndex] ?? null}
+          onApply={handleApplyKernel}
         />
       )}
 
