@@ -1,6 +1,6 @@
 import React from 'react';
 import { Typography } from '@mui/material';
-import { type ImageInfo } from '../../App';
+import type { ImageInfo } from '../../features/upload/ui/FileUpload';
 
 interface StatusBarProps {
     imageInfo: ImageInfo | null;

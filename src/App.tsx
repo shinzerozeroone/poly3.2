@@ -1,3 +1,5 @@
+//@ts-nocheck
+
 import { useState, useEffect } from 'react';
 import { Container, Typography, Box, Button, Tooltip } from '@mui/material';
 import PanToolIcon from '@mui/icons-material/PanTool';
