@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Container, Typography, Box, Button, Tooltip } from '@mui/material';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
